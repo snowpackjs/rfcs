@@ -1,0 +1,247 @@
+<!--
+  Note: You are probably looking for `stage-1--discussion-template.md`!
+  This template is reserved for anyone championing an already-approved proposal.
+
+  Community members who would like to propose an idea or feature should begin
+  by creating a GitHub Discussion. See the repo README.md for more info.
+
+  To use this template: create a new, empty file in the repo under `proposals/${ID}.md`.
+  Replace `${ID}` with the official accepted proposal ID, found in the GitHub Issue
+  of the accepted proposal.
+-->
+
+**If you have feedback and the feature is released as experimental, please leave it on the Stage 3 PR. Otherwise, comment on the Stage 2 issue (links below).**
+
+- Start Date: 2024-10-01
+- Reference Issues: <!-- related issues, otherwise leave empty -->
+- Implementation PR: https://github.com/withastro/astro/pull/12067
+- Stage 2 Issue: https://github.com/withastro/roadmap/issues/699
+- Stage 3 PR: <!-- related roadmap PR, leave it empty if you don't have a PR yet -->
+
+# Summary
+
+This RFC proposes adding native support for importing and rendering `.svg` files as Astro components, with optimized rendering techniques to minimize performance impact. It aims to allow `.svg` files to be treated as components that accept props and be optimized for repeated use on a page using `<symbol>` and `<use>` elements.
+
+# Example
+
+An SVG can be imported directly into an Astro component and used as a component that will only embed itself once. 
+
+```astro
+---
+import Logo from '../assets/logo.svg'
+---
+
+<!-- First usage: includes initial <symbol> -->
+<Logo width={48} height={48} />
+
+<!-- Subsequent usage(s): automatically optimized with <use> -->
+<Logo width={48} height={48} />
+```
+
+# Background & Motivation
+
+Include any useful background detail that that explains why this RFC is important.
+What are the problems that this RFC sets out to solve? Why now? Be brief!
+
+It can be useful to illustrate your RFC as a user problem in this section.
+(ex: "Users have reported that it is difficult to do X in Astro today.")
+
+# Goals
+
+- Enable importing and rendering `.svg` files as Astro components.
+- Allow users to pass props to the root `svg` element while allowing for prop overrides.
+- Inline `.svg` file directly without using optimized sprite rendering behavior.
+- Allow users to opt-in to optimized `.svg` rendering by utilizing `symbol` and `use` for repeated instances.
+- Maintain backwards compatibility with existing `.svg` import behavior.
+- Strip unnecessary attributes like `xmlns` and `version` from `.svg` files to reduce size.
+- Allow third-party plugins to hook into the `.svg` import behavior to generate their own component libraries.
+
+# Non-Goals
+
+- Out-of-scope: Advanced tree-shaking or SSR optimizations for large icon sets.
+- Out-of-scope: Advanced `.svg` file optimization such as `svgo`.
+- Future: Adding support for `.svg` files as framework components.
+- Non-goal: Adding support for `.json` icon sets such as `@iconify/json`.
+- Non-goal: SVG content analysis for accessibility.
+
+# Detailed Design
+
+## Importing SVG Files as Components
+
+The core design of this proposal allows `.svg` files to be imported and used as components in Astro. This means developers can import `.svg` files into their Astro components and render them directly as if they were Astro components. The goal is to maintain ease of use while automating performance optimizations under the hood.
+
+**Example:**
+
+```astro
+---
+import Logo from '../assets/logo.svg';
+---
+
+<Logo width={48} height={48} />
+```
+
+## Inline Implementation
+
+Each time a `.svg` file is imported and rendered in Astro, Astro will directly inject the optimized `.svg` file contents into the location with the root `<svg>` element properties overridden by the props passed to the SVG Component.
+
+**Example:**
+
+```astro
+---
+import Logo from '../assets/logo.svg';
+---
+
+<Logo width={48} height={48} />
+```
+
+This would generate the following output:
+
+```astro
+<svg width="48" height="48">
+    <!-- SVG Content -->
+</svg> 
+```
+
+## Sprite Implementation
+
+When a `.svg` file is first imported and rendered in Astro, the system will convert the file into a `<symbol>` element. This will be inserted into the `<svg>` element. This approach ensures that all subsequent renders of that `.svg` can use a `<use>` element, referencing the ID of the initial `<symbol>`.
+
+**Example:**
+
+```astro
+---
+import Logo from '../assets/logo.svg';
+---
+
+<!-- First Usage -->
+<Logo width={48} height={48} />
+
+<!-- Second Usage -->
+<Logo width={48} height={48} />
+
+```
+
+This would generate the following output:
+
+```astro
+<svg width="48" height="48">
+    <symbol id="a:0">
+        <!-- SVG Content -->
+    </symbol>
+    <use href="#a:0" />
+</svg> 
+<svg width="48" height="48">
+    <use href="#a:0" />
+</svg> 
+```
+
+This pattern significantly reduces the amount of duplicated inline SVG markup and speeds up the browser rendering by reducing the number of DOM nodes.
+
+## Prop Inheritance and Overriding
+
+When a `.svg` is treated as a component, users can pass attributes such as `width`, `height`, `fill`, `stroke`, and other common SVG attributes. These attributes will automatically be applied to the root `<svg>` element unless they conflict with existing properties in the original `.svg` file, in which case the passed props will override the existing ones.
+
+**Example:**
+
+```astro
+---
+import Logo from '../assets/logo.svg'
+---
+
+<!-- Pass width and height to override default size -->
+<Logo width={100} height={100} fill="blue" />
+```
+
+### Sizing
+
+To simplify the process of setting the dimensions of SVG components, this proposal introduces a `size` prop that developers can use to uniformly scale the width and height of an SVG. This prop provides a convenient shorthand for situations where both width and height need to be set to the same value, offering a more concise API.
+
+**Example:**
+
+```astro
+---
+import Logo from '../assets/logo.svg';
+---
+
+<!-- Using the size prop to set both width and height -->
+<Logo size={48} />
+```
+
+This would generate the following output:
+
+```astro
+<svg width="48" height="48">
+    <!-- SVG Content -->
+</svg> 
+```
+
+## Accessibility Considerations
+
+One key aspect of this design is ensuring that the SVG components generated from `.svg` files are accessible by default, following best practices for web accessibility. This includes the following considerations:
+
+### ARIA Attributes
+
+- **Role Attribute:** By default, Astro could set `role="img"` on SVGs when they are used for non-decorative purposes.
+- **Title Element:** If the `.svg` file needs and accessible title/label, Astro can inject a `<title>` element.
+
+**Example:**
+
+```astro
+---
+import Logo from '../assets/logo.svg'
+---
+
+<!-- Pass an accessible title that will be injected  -->
+<Logo title="Company Logo" />
+```
+
+This would generate the following output:
+
+
+```astro
+<svg width="24" height="24" role="img">
+    <title>Company Logo</title>
+    <!-- SVG Content -->
+</svg> 
+```
+
+While this proposal offers strong defaults for accessibility, it is essential to give developers full control. Any automatically generated accessibility attributes (aria-label, role, etc.) should be overridable by the developer at the component level, ensuring that specific use cases or custom behaviors can be supported.
+
+# Testing Strategy
+
+In addition to standard unit and integration tests, the testing strategy should include:
+
+- **Cross-browser testing:** Ensuring that the Sprite pattern works consistently across all major browsers (e.g., Chrome, Firefox, Safari, Edge).
+- **Regression testing:** Verifying that this optimization doesn't unintentionally break any existing `.svg` imports.
+- **Performance testing:** Measuring the performance improvements in pages with many `<svg>` elements and comparing the impact of the new rendering system against inlining every SVG individually.
+
+# Drawbacks
+
+- **Increased Complexity for Debugging**: Debugging issues with SVG rendering could become more difficult due to the added abstraction of the Sprite approach. Developers may need additional documentation to understand how SVGs are being rendered and optimized, especially when diagnosing rendering problems in complex applications.
+- **Limited Use Cases:** The performance benefits of the Sprite approach may be minimal for projects that don't heavily rely on SVGs. For smaller projects or those with limited SVG usage, the optimization might introduce unnecessary complexity without providing significant gains in performance.
+- **Edge Cases with Advanced SVG Features:** Some advanced features of SVGs, like `<filter>` or `<mask>`, _may_ have issues when used within a `<symbol>` and referenced by `<use>`. These features will need thorough testing to ensure they function properly in the optimized model.
+
+# Alternatives
+
+- **Status Quo:** Leave developers to their own decision for handling SVGs which has typically been either embedding into Astro components or reaching for [`astro-icon`](https://github.com/natemoo-re/astro-icon) / [`unplugin-icons`](https://github.com/unplugin/unplugin-icons).
+- **SVG Spritesheet Plugin:** Leave SVG handling to userland entirely and provide an Astro plugin that automates SVG Sprite generation. This plugin could compile multiple SVGs into a single spritesheet at build time, allowing developers to manually include optimized SVGs where needed.
+- **Partial Implementation:**  If full integration into Astro's core is deemed too complex, a partial implementation could involve adding support for importing `.svg` files as components without the full Sprite optimization. This would allow developers to use `.svg` files more easily, while leaving optimization to future versions or third-party tools.
+
+# Adoption strategy
+
+To ensure that developers can easily adopt this feature:
+
+- **Documentation:** The Astro documentation will be updated with detailed guides and examples of how to use `.svg` imports and leverage the new optimization strategies. Special focus will be placed on explaining the benefits of the Sprite pattern for performance-conscious developers.
+- **Framework-Specific Docs:** Documentation will also need to address framework-specific usage. This will cover the limitations of the `.svg` imports in popular frameworks like React and Vue, ensuring smooth adoption for developers who are building Astro projects using these frameworks.
+- **Code Examples:** The core team can provide boilerplate examples and starter templates that showcase the optimized `.svg` handling. These templates could be adapted for common use-cases, such as building an icon library or optimizing assets for a marketing page.
+- **Experimental Flag:** Initially, this feature could be released under an experimental flag in `astro.config.mjs` to gather feedback from early adopters. If the feedback is positive, the feature could later be enabled by default in a future Astro release.
+- **Migration Path:** Since this feature is backwards-compatible, no migration will be required for existing projects. Developers can opt into the new functionality by updating their `.svg` imports, but their projects will continue working without any changes if they choose not to adopt the new behavior.
+
+# Unresolved Questions
+
+- **Default Behavior:** Having used the Sprite pattern in `astro-icon` by default, we have come across many issues related to the pattern. It would be best to leave the Sprite pattern as opt-in for now. How should we accomplish that?
+    - Initial thought is a `mode` property in the `astro.config.mjs` under the `svg` settings, that would have `inline` and `sprite`. This could potentially be further expanded to something like `symbol` which would be beneficial for generating a custom sprite [Reference](https://github.com/natemoo-re/astro-icon/pull/238). Then allowing override on individual SVGs using a `mode` prop.
+- **SVG Accessibility:** Should we automatically inject the `role="img"` attribute for better accessibility by default or leave this responsibility to developers?
+    - What should happen when the `.svg` file includes a `<title>` element and they pass the `title` prop?
+- **Custom IDs for Symbols:** By default, Astro would generate an ID for each `<symbol>`, but there might be cases where developers what to specify their own IDs for easier reference. Should we allow developers to manually assign custom IDs to the generated symbols?
+- **Sizing:** Should the `size` property override `width` and `height` props? Should it override `width` and `height` attributes? What would be the expectation of the `size` property?
